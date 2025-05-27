@@ -10,4 +10,3 @@ export * from './settingsRepository';
 export * from './archiveRepository';
 export * from './creativeRepository';
 export * from './userRepository';
-export * from './userPromptSelectionRepository';

@@ -4,39 +4,10 @@
 import { Prompt } from '../types/prompt';
 import { dbOperations } from '../core/operations';
 import { DB_CONFIG } from '../config';
-import {
-  getAllPromptsFromSupabase,
-  getPromptsByTypeFromSupabase,
-  getPromptByIdFromSupabase,
-  addPromptToSupabase,
-  updatePromptInSupabase,
-  deletePromptFromSupabase,
-  getUserPromptSelectionsFromSupabase
-} from '@/lib/supabase/tishiciAdapter'; // 使用tishiciAdapter替代promptService
-import { supabase } from '@/lib/supabase';
 import { encryptPrompt, decryptPrompt, decryptPrompts } from '@/lib/promptEncryptionManager';
-import { useAuthStore } from '@/store/slices/authStore';
 
 const { MAIN } = DB_CONFIG.NAMES;
 const { PROMPTS } = DB_CONFIG.STORES.MAIN;
-
-// 是否使用Supabase
-const useSupabase = async () => {
-  // 检查是否启用Supabase提示词功能
-  const isSupabaseEnabled = process.env.NEXT_PUBLIC_USE_SUPABASE_PROMPTS === 'true';
-
-  // 如果未启用，直接返回false
-  if (!isSupabaseEnabled) return false;
-
-  try {
-    // 尝试获取当前用户
-    const user = await useAuthStore.getState().getCurrentUser();
-    return !!user; // 如果用户存在，返回true
-  } catch (error) {
-    console.error('检查用户登录状态失败:', error);
-    return false;
-  }
-};
 
 /**
  * 添加提示词
@@ -47,16 +18,6 @@ export const addPrompt = async (prompt: Omit<Prompt, 'id'>): Promise<Prompt> => 
   // 加密提示词内容（本地存储用）
   const encryptedPrompt = await encryptPrompt(prompt) as Omit<Prompt, 'id'>;
 
-  // 如果使用Supabase
-  if (await useSupabase()) {
-    try {
-      // 发送到Supabase时解密内容
-      return await addPromptToSupabase(encryptedPrompt, true);
-    } catch (error) {
-      console.error('Supabase添加提示词失败，回退到本地存储:', error);
-    }
-  }
-
   // 使用本地存储
   return dbOperations.add<Prompt>(MAIN, PROMPTS, encryptedPrompt);
 };
@@ -64,27 +25,9 @@ export const addPrompt = async (prompt: Omit<Prompt, 'id'>): Promise<Prompt> => 
 /**
  * 获取所有提示词
  * @param decryptContents 是否解密内容
- * @param onlyUserPrompts 是否只获取当前用户的提示词
  * @returns 所有提示词
  */
-export const getAllPrompts = async (decryptContents: boolean = false, onlyUserPrompts: boolean = false): Promise<Prompt[]> => {
-  // 如果使用Supabase
-  if (await useSupabase()) {
-    try {
-      // 从Supabase获取提示词，不解密内容
-      const prompts = await getAllPromptsFromSupabase(false, onlyUserPrompts);
-
-      // 如果需要解密内容
-      if (decryptContents) {
-        return await decryptPrompts(prompts);
-      }
-
-      return prompts;
-    } catch (error) {
-      console.error('Supabase获取提示词失败，回退到本地存储:', error);
-    }
-  }
-
+export const getAllPrompts = async (decryptContents: boolean = false): Promise<Prompt[]> => {
   // 使用本地存储
   const prompts = await dbOperations.getAll<Prompt>(MAIN, PROMPTS);
 
@@ -99,120 +42,15 @@ export const getAllPrompts = async (decryptContents: boolean = false, onlyUserPr
   return sortedPrompts;
 };
 
-/**
- * 获取用户可用的提示词（包括用户自己的提示词和用户选择的公开提示词）
- * @param type 提示词类型
- * @param decryptContents 是否解密内容
- * @returns 用户可用的提示词
- */
-export const getUserAvailablePromptsByType = async (type: Prompt['type'], decryptContents: boolean = false): Promise<Prompt[]> => {
-  // 如果使用Supabase
-  if (await useSupabase()) {
-    try {
-      // 获取用户自己的提示词
-      const userPrompts = await getPromptsByTypeFromSupabase(type, false, true);
 
-      // 获取用户选择的提示词ID
-      const selectedPromptIds = await getUserPromptSelectionsFromSupabase();
-
-      // 如果没有选择的提示词，直接返回用户自己的提示词
-      if (selectedPromptIds.length === 0) {
-        // 如果需要解密内容
-        if (decryptContents) {
-          return await decryptPrompts(userPrompts);
-        }
-        return userPrompts;
-      }
-
-      // 获取用户选择的提示词
-      const selectedPrompts: Prompt[] = [];
-      for (const promptId of selectedPromptIds) {
-        const prompt = await getPromptByIdFromSupabase(promptId.toString(), false);
-        if (prompt && prompt.type === type) {
-          // 只添加与当前用户不同的提示词（公开提示词）
-          const user = await useAuthStore.getState().getCurrentUser();
-          if (!user || prompt.userId !== user.id) {
-            selectedPrompts.push(prompt);
-          }
-        }
-      }
-
-      // 合并用户自己的提示词和用户选择的提示词
-      const allPrompts = [...userPrompts, ...selectedPrompts];
-
-      // 去重
-      const uniquePrompts = allPrompts.filter((prompt, index, self) =>
-        index === self.findIndex(p => p.id === prompt.id)
-      );
-
-      // 按更新日期排序，最新的在前面
-      const sortedPrompts = uniquePrompts.sort((a, b) =>
-        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-      );
-
-      // 如果需要解密内容
-      if (decryptContents) {
-        return await decryptPrompts(sortedPrompts);
-      }
-
-      return sortedPrompts;
-    } catch (error) {
-      console.error(`Supabase获取用户可用的类型为 ${type} 的提示词失败，回退到本地存储:`, error);
-    }
-  }
-
-  // 使用本地存储
-  const prompts = await dbOperations.getAll<Prompt>(MAIN, PROMPTS);
-  const filteredPrompts = prompts.filter(prompt => prompt.type === type);
-
-  // 如果需要解密内容
-  if (decryptContents) {
-    return await decryptPrompts(filteredPrompts);
-  }
-
-  return filteredPrompts;
-};
 
 /**
  * 根据类型获取提示词
  * @param type 提示词类型
  * @param decryptContents 是否解密内容
- * @param onlyUserPrompts 是否只获取当前用户的提示词
  * @returns 指定类型的提示词
  */
-export const getPromptsByType = async (type: Prompt['type'], decryptContents: boolean = false, onlyUserPrompts: boolean = false): Promise<Prompt[]> => {
-  console.log(`[DEBUG] 开始获取类型为 ${type} 的提示词，解密内容: ${decryptContents}, 只获取用户提示词: ${onlyUserPrompts}`);
-
-  // 如果使用Supabase
-  if (await useSupabase()) {
-    try {
-      console.log(`[DEBUG] 使用Supabase获取提示词`);
-
-      // 如果不是只获取用户自己的提示词，则获取用户可用的提示词
-      if (!onlyUserPrompts) {
-        console.log(`[DEBUG] 获取用户可用的提示词`);
-        const prompts = await getUserAvailablePromptsByType(type, decryptContents);
-        console.log(`[DEBUG] 获取到 ${prompts.length} 个用户可用的提示词`);
-        return prompts;
-      }
-
-      // 从Supabase获取提示词，不解密内容
-      console.log(`[DEBUG] 从Supabase获取提示词，类型: ${type}`);
-      const prompts = await getPromptsByTypeFromSupabase(type, false, onlyUserPrompts);
-      console.log(`[DEBUG] 从Supabase获取到 ${prompts.length} 个提示词，ID列表:`, prompts.map(p => p.id));
-
-      // 如果需要解密内容
-      if (decryptContents) {
-        console.log(`[DEBUG] 解密提示词内容`);
-        return await decryptPrompts(prompts);
-      }
-
-      return prompts;
-    } catch (error) {
-      console.error(`Supabase获取类型为 ${type} 的提示词失败，回退到本地存储:`, error);
-    }
-  }
-
+export const getPromptsByType = async (type: Prompt['type'], decryptContents: boolean = false): Promise<Prompt[]> => {
   // 使用本地存储
   const prompts = await dbOperations.getAll<Prompt>(MAIN, PROMPTS);
   const filteredPrompts = prompts.filter(prompt => prompt.type === type);
@@ -232,26 +70,6 @@ export const getPromptsByType = async (type: Prompt['type'], decryptContents: bo
  * @returns 提示词或null
  */
 export const getPromptById = async (id: string, decryptContent: boolean = false): Promise<Prompt | null> => {
-  // 如果使用Supabase
-  if (await useSupabase()) {
-    try {
-      // 从Supabase获取提示词，不解密内容
-      const prompt = await getPromptByIdFromSupabase(id.toString(), false);
-
-      // 如果找不到提示词
-      if (!prompt) return null;
-
-      // 如果需要解密内容
-      if (decryptContent) {
-        return await decryptPrompt(prompt);
-      }
-
-      return prompt;
-    } catch (error) {
-      console.error(`Supabase获取ID为 ${id} 的提示词失败，回退到本地存储:`, error);
-    }
-  }
-
   // 使用本地存储
   const prompt = await dbOperations.getById<Prompt>(MAIN, PROMPTS, id);
 
@@ -277,18 +95,8 @@ export const updatePrompt = async (prompt: Prompt): Promise<Prompt> => {
   // 加密提示词内容（本地存储用）
   const encryptedPrompt = await encryptPrompt(prompt) as Prompt;
 
-  // 如果使用Supabase
-  if (await useSupabase()) {
-    try {
-      // 发送到Supabase时解密内容
-      return await updatePromptInSupabase(encryptedPrompt, true);
-    } catch (error) {
-      console.error('Supabase更新提示词失败，回退到本地存储:', error);
-    }
-  }
-
   // 使用本地存储
-  return dbOperations.update<Prompt & { id: number }>(MAIN, PROMPTS, encryptedPrompt as Prompt & { id: number });
+  return dbOperations.update<Prompt>(MAIN, PROMPTS, encryptedPrompt);
 };
 
 /**
@@ -296,16 +104,6 @@ export const updatePrompt = async (prompt: Prompt): Promise<Prompt> => {
  * @param id 提示词ID
  */
 export const deletePrompt = async (id: string): Promise<void> => {
-  // 如果使用Supabase
-  if (await useSupabase()) {
-    try {
-      await deletePromptFromSupabase(id.toString());
-      return;
-    } catch (error) {
-      console.error(`Supabase删除ID为 ${id} 的提示词失败，回退到本地存储:`, error);
-    }
-  }
-
   // 使用本地存储
   return dbOperations.remove(MAIN, PROMPTS, id);
 };
@@ -316,7 +114,7 @@ export const deletePrompt = async (id: string): Promise<void> => {
  * @returns 当前用户的提示词
  */
 export const getUserPrompts = async (decryptContents: boolean = false): Promise<Prompt[]> => {
-  return getAllPrompts(decryptContents, true);
+  return getAllPrompts(decryptContents);
 };
 
 /**
@@ -326,7 +124,7 @@ export const getUserPrompts = async (decryptContents: boolean = false): Promise<
  * @returns 当前用户指定类型的提示词
  */
 export const getUserPromptsByType = async (type: Prompt['type'], decryptContents: boolean = false): Promise<Prompt[]> => {
-  return getPromptsByType(type, decryptContents, true);
+  return getPromptsByType(type, decryptContents);
 };
 
 /**
@@ -335,123 +133,17 @@ export const getUserPromptsByType = async (type: Prompt['type'], decryptContents
  * @returns 是否属于当前用户
  */
 export const isUserPrompt = async (promptId: string): Promise<boolean> => {
-  const prompt = await getPromptById(promptId);
-  if (!prompt) return false;
-
-  const user = await useAuthStore.getState().getCurrentUser();
-  if (!user) return false;
-
-  return prompt.userId === user.id;
+  // 本地存储中所有提示词都属于当前用户
+  return true;
 };
 
 /**
- * 从用户提示词选择中获取提示词
- * @param type 提示词类型
- * @param decryptContents 是否解密内容
- * @returns 用户选择的提示词
- */
-export const getSelectedPromptsByType = async (type: Prompt['type'], decryptContents: boolean = false): Promise<Prompt[]> => {
-  // 如果使用Supabase
-  if (await useSupabase()) {
-    try {
-      // 获取用户选择的提示词ID
-      const selectedPromptIds = await getUserPromptSelectionsFromSupabase();
-
-      // 如果没有选择的提示词，返回空数组
-      if (selectedPromptIds.length === 0) {
-        return [];
-      }
-
-      // 获取用户选择的提示词
-      const selectedPrompts: Prompt[] = [];
-      for (const promptId of selectedPromptIds) {
-        const prompt = await getPromptByIdFromSupabase(promptId.toString(), false);
-        if (prompt && prompt.type === type) {
-          selectedPrompts.push(prompt);
-        }
-      }
-
-      // 如果需要解密内容
-      if (decryptContents) {
-        return await decryptPrompts(selectedPrompts);
-      }
-
-      return selectedPrompts;
-    } catch (error) {
-      console.error(`Supabase获取用户选择的类型为 ${type} 的提示词失败，回退到本地存储:`, error);
-    }
-  }
-
-  // 使用本地存储
-  return [];
-};
-
-/**
- * 获取AI界面下拉菜单中的提示词（包括用户自己的提示词和用户选择的公开提示词）
+ * 获取AI界面下拉菜单中的提示词
  * @param type 提示词类型
  * @param decryptContents 是否解密内容
  * @returns 用户可用的提示词
  */
 export const getAIInterfacePromptsByType = async (type: Prompt['type'], decryptContents: boolean = false): Promise<Prompt[]> => {
-  // 如果使用Supabase
-  if (await useSupabase()) {
-    try {
-      // 获取用户自己的提示词
-      const userPrompts = await getPromptsByTypeFromSupabase(type, false, true);
-
-      // 获取用户选择的提示词ID
-      const selectedPromptIds = await getUserPromptSelectionsFromSupabase();
-
-      // 如果没有选择的提示词，直接返回用户自己的提示词
-      if (selectedPromptIds.length === 0) {
-        // 如果需要解密内容
-        if (decryptContents) {
-          return await decryptPrompts(userPrompts);
-        }
-        return userPrompts;
-      }
-
-      // 获取用户选择的提示词
-      const selectedPrompts: Prompt[] = [];
-      for (const promptId of selectedPromptIds) {
-        const prompt = await getPromptByIdFromSupabase(promptId.toString(), false);
-        if (prompt && prompt.type === type) {
-          // 添加所有选择的提示词，包括用户自己的和公开的
-          selectedPrompts.push(prompt);
-        }
-      }
-
-      // 合并用户自己的提示词和用户选择的提示词
-      const allPrompts = [...userPrompts, ...selectedPrompts];
-
-      // 确保所有提示词都是请求的类型 - 修复类型混淆的BUG
-      const filteredOutPrompts = allPrompts.filter(prompt => prompt.type !== type);
-      if (filteredOutPrompts.length > 0) {
-        console.debug(`过滤掉了 ${filteredOutPrompts.length} 个不匹配类型的提示词，请求类型: ${type}`);
-      }
-      const typeFilteredPrompts = allPrompts.filter(prompt => prompt.type === type);
-
-      // 去重
-      const uniquePrompts = typeFilteredPrompts.filter((prompt, index, self) =>
-        index === self.findIndex(p => p.id === prompt.id)
-      );
-
-      // 按更新日期排序，最新的在前面
-      const sortedPrompts = uniquePrompts.sort((a, b) =>
-        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-      );
-
-      // 如果需要解密内容
-      if (decryptContents) {
-        return await decryptPrompts(sortedPrompts);
-      }
-
-      return sortedPrompts;
-    } catch (error) {
-      console.error(`Supabase获取AI界面提示词失败，回退到本地存储:`, error);
-    }
-  }
-
   // 使用本地存储
   const prompts = await dbOperations.getAll<Prompt>(MAIN, PROMPTS);
   // 严格过滤确保只返回指定类型的提示词
@@ -463,129 +155,4 @@ export const getAIInterfacePromptsByType = async (type: Prompt['type'], decryptC
   }
 
   return filteredPrompts;
-};
-
-/**
- * 获取所有公开提示词
- * @param type 提示词类型（可选）
- * @param decryptContents 是否解密内容
- * @returns 所有公开提示词
- */
-export const getPublicPrompts = async (type?: Prompt['type'], decryptContents: boolean = false): Promise<Prompt[]> => {
-  // 如果使用Supabase
-  if (await useSupabase()) {
-    try {
-      // 使用tishiciAdapter中的getPublicPromptsFromSupabase函数
-      const { getPublicPromptsFromSupabase } = await import('@/lib/supabase/tishiciAdapter');
-      const publicPrompts = await getPublicPromptsFromSupabase(type, false);
-
-      // 如果需要解密内容
-      if (decryptContents) {
-        return await decryptPrompts(publicPrompts);
-      }
-
-      return publicPrompts;
-    } catch (error) {
-      console.error(`Supabase获取公开提示词失败，回退到本地存储:`, error);
-    }
-  }
-
-  // 使用本地存储 - 本地存储不支持公开提示词
-  return [];
-};
-
-/**
- * 获取其他用户创建的提示词
- * @param type 提示词类型（可选）
- * @param decryptContents 是否解密内容
- * @returns 其他用户创建的提示词
- */
-export const getUserCreatedPrompts = async (type?: Prompt['type'], decryptContents: boolean = false): Promise<Prompt[]> => {
-  // 如果使用Supabase
-  if (await useSupabase()) {
-    try {
-      // 获取当前用户
-      const user = await useAuthStore.getState().getCurrentUser();
-      if (!user) return [];
-
-      // 构建查询
-      let query = supabase
-        .from('tishici')
-        .select('*')
-        .neq('user_id', user.id) // 排除当前用户的提示词
-        .eq('is_public', true) // 只获取公开的提示词
-        .order('updated_at', { ascending: false });
-
-      // 如果指定了类型，则按类型过滤
-      if (type) {
-        query = query.eq('type', type);
-      }
-
-      const { data, error } = await query;
-
-      if (error) throw error;
-
-      // 转换为本地提示词格式
-      const prompts = [];
-      for (const item of data) {
-        try {
-          // 导入 convertToLocalPrompt 函数
-          const { convertToLocalPrompt } = await import('@/lib/supabase/tishiciService');
-          const prompt = await convertToLocalPrompt(item, false);
-          prompts.push(prompt);
-        } catch (error) {
-          console.error('转换提示词失败:', error);
-        }
-      }
-
-      // 如果需要解密内容
-      if (decryptContents) {
-        return await decryptPrompts(prompts);
-      }
-
-      return prompts;
-    } catch (error) {
-      console.error(`Supabase获取其他用户创建的提示词失败:`, error);
-    }
-  }
-
-  // 使用本地存储 - 本地存储不支持获取其他用户的提示词
-  return [];
-};
-
-/**
- * 复制提示词到自己的账户
- * @param promptId 要复制的提示词ID
- * @returns 复制后的提示词
- */
-export const copyPromptToMyAccount = async (promptId: string): Promise<Prompt> => {
-  // 如果使用Supabase
-  if (await useSupabase()) {
-    try {
-      // 导入tishiciAdapter的复制函数
-      const { copyPromptToMyAccount: copyPromptToMyAccountSupabase } = await import('@/lib/supabase/tishiciAdapter');
-      return await copyPromptToMyAccountSupabase(promptId.toString());
-    } catch (error) {
-      console.error(`Supabase复制ID为 ${promptId} 的提示词失败，回退到本地存储:`, error);
-    }
-  }
-
-  // 使用本地存储
-  const originalPrompt = await getPromptById(promptId);
-  if (!originalPrompt) throw new Error('提示词不存在');
-
-  // 创建新的提示词
-  const newPrompt: Omit<Prompt, 'id'> = {
-    title: `${originalPrompt.title} (复制)`,
-    type: originalPrompt.type,
-    content: originalPrompt.content,
-    description: originalPrompt.description,
-    examples: originalPrompt.examples,
-    isPublic: false, // 默认设为私有
-    createdAt: new Date(),
-    updatedAt: new Date()
-  };
-
-  // 添加到本地存储
-  return await addPrompt(newPrompt);
 };

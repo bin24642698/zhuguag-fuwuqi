@@ -3,7 +3,7 @@
  * 用于管理提示词的加密和解密
  */
 import { Prompt } from '@/data/database/types/prompt';
-import { getCurrentUser } from './supabase';
+import { useAuthStore } from '@/store/slices/authStore';
 import { encryptText, decryptText, generateEncryptionKey, isEncrypted } from './utils/encryption';
 
 /**
@@ -13,22 +13,22 @@ import { encryptText, decryptText, generateEncryptionKey, isEncrypted } from './
  */
 export const encryptPrompt = async (prompt: Prompt | Omit<Prompt, 'id'>): Promise<Prompt | Omit<Prompt, 'id'>> => {
   try {
-    const user = await getCurrentUser();
+    const user = await useAuthStore.getState().getCurrentUser();
     if (!user) {
       console.warn('用户未登录，无法加密提示词');
       return prompt;
     }
-    
+
     const key = generateEncryptionKey(user.id);
-    
+
     // 检查内容是否已加密
     if (isEncrypted(prompt.content, key)) {
       return prompt;
     }
-    
+
     // 加密内容
     const encryptedContent = encryptText(prompt.content, key);
-    
+
     return {
       ...prompt,
       content: encryptedContent
@@ -46,22 +46,22 @@ export const encryptPrompt = async (prompt: Prompt | Omit<Prompt, 'id'>): Promis
  */
 export const decryptPrompt = async (prompt: Prompt): Promise<Prompt> => {
   try {
-    const user = await getCurrentUser();
+    const user = await useAuthStore.getState().getCurrentUser();
     if (!user) {
       console.warn('用户未登录，无法解密提示词');
       return prompt;
     }
-    
+
     const key = generateEncryptionKey(user.id);
-    
+
     // 检查内容是否已加密
     if (!isEncrypted(prompt.content, key)) {
       return prompt;
     }
-    
+
     // 解密内容
     const decryptedContent = decryptText(prompt.content, key);
-    
+
     return {
       ...prompt,
       content: decryptedContent
@@ -79,12 +79,12 @@ export const decryptPrompt = async (prompt: Prompt): Promise<Prompt> => {
  */
 export const decryptPrompts = async (prompts: Prompt[]): Promise<Prompt[]> => {
   const decryptedPrompts = [];
-  
+
   for (const prompt of prompts) {
     const decryptedPrompt = await decryptPrompt(prompt);
     decryptedPrompts.push(decryptedPrompt);
   }
-  
+
   return decryptedPrompts;
 };
 
@@ -96,19 +96,19 @@ export const decryptPrompts = async (prompts: Prompt[]): Promise<Prompt[]> => {
  */
 export const decryptPromptOnDemand = async (prompt: Prompt): Promise<string> => {
   try {
-    const user = await getCurrentUser();
+    const user = await useAuthStore.getState().getCurrentUser();
     if (!user) {
       console.warn('用户未登录，无法解密提示词');
       return prompt.content;
     }
-    
+
     const key = generateEncryptionKey(user.id);
-    
+
     // 检查内容是否已加密
     if (!isEncrypted(prompt.content, key)) {
       return prompt.content;
     }
-    
+
     // 解密内容
     return decryptText(prompt.content, key);
   } catch (error) {

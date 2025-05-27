@@ -140,17 +140,6 @@ const AIBookAnalyzer: React.FC<AIBookAnalyzerProps> = ({
               >
                 普通版
               </button>
-              <button
-                onClick={() => !isProcessing && setSelectedModel(MODELS.GEMINI_PRO)}
-                className={`py-1 px-3 text-xs font-medium transition-all duration-200 ${
-                  selectedModel === MODELS.GEMINI_PRO
-                    ? 'bg-[#5a9d6b] text-white'
-                    : 'bg-white text-[#5a9d6b] hover:bg-[rgba(90,157,107,0.1)]'
-                }`}
-                disabled={isProcessing}
-              >
-                高级版
-              </button>
             </div>
           </div>
         </div>

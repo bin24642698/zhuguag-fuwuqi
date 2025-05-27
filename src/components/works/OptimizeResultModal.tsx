@@ -317,7 +317,7 @@ export const OptimizeResultModal: React.FC<OptimizeResultModalProps> = ({
             {/* 模型选择 */}
             <div className="mb-4">
               <label className="block text-text-dark font-medium mb-2">选择模型</label>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3">
                 <div
                   className={`p-3 rounded-lg border cursor-pointer transition-all ${
                     selectedModel === MODELS.GEMINI_FLASH
@@ -339,29 +339,6 @@ export const OptimizeResultModal: React.FC<OptimizeResultModalProps> = ({
                   <div className="font-medium text-text-dark mb-1">普通版</div>
                   <div className="text-sm text-text-light">
                     速度更快，适合一般优化
-                  </div>
-                </div>
-                <div
-                  className={`p-3 rounded-lg border cursor-pointer transition-all ${
-                    selectedModel === MODELS.GEMINI_PRO
-                      ? 'border-[#7D85CC] bg-[rgba(125,133,204,0.1)]'
-                      : 'border-gray-200 hover:border-[#7D85CC] hover:bg-[rgba(125,133,204,0.05)]'
-                  }`}
-                  onClick={() => {
-                    setSelectedModel(MODELS.GEMINI_PRO);
-                    // 更新设置
-                    if (onSettingsChange) {
-                      onSettingsChange({
-                        promptId: selectedPrompt?.id || null,
-                        optimizeText,
-                        selectedModel: MODELS.GEMINI_PRO
-                      });
-                    }
-                  }}
-                >
-                  <div className="font-medium text-text-dark mb-1">高级版</div>
-                  <div className="text-sm text-text-light">
-                    质量更高，适合深度优化
                   </div>
                 </div>
               </div>

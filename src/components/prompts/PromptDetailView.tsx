@@ -15,7 +15,7 @@ const getTypeColor = (type: string): string => {
 
 interface PromptDetailViewProps {
   prompt: Prompt;
-  isEditing: boolean;
+  isEditing?: boolean; // 保留兼容性，但默认为true
   editedPrompt?: Prompt;
   handleInputChange?: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => void;
   handleExampleChange?: (index: number, value: string) => void;
@@ -24,15 +24,14 @@ interface PromptDetailViewProps {
   onSave?: () => void;
   onCancel?: () => void;
   onDelete?: () => void;
-  onEdit?: () => void;
 }
 
 /**
- * 提示词详情视图组件 - 仅提示词作者可见
+ * 提示词详情视图组件 - 编辑模式
  */
 export function PromptDetailView({
   prompt,
-  isEditing,
+  isEditing = true, // 默认为编辑模式
   editedPrompt,
   handleInputChange,
   handleExampleChange,
@@ -40,8 +39,7 @@ export function PromptDetailView({
   removeExample,
   onSave,
   onCancel,
-  onDelete,
-  onEdit
+  onDelete
 }: PromptDetailViewProps) {
   // 状态
   const [isContentEditModalOpen, setIsContentEditModalOpen] = useState(false);
@@ -71,9 +69,8 @@ export function PromptDetailView({
     }
   };
 
-  if (isEditing) {
-    // 编辑模式
-    return (
+  // 始终使用编辑模式
+  return (
       <div className="flex flex-col min-h-[500px]">
         <div className="flex-grow">
           <form className="space-y-6 h-full flex flex-col">
@@ -97,7 +94,7 @@ export function PromptDetailView({
                 className="w-full px-4 py-3 bg-white bg-opacity-70 border border-[rgba(120,180,140,0.3)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[rgba(120,180,140,0.5)] text-text-dark min-h-[120px] overflow-y-auto break-words whitespace-pre-wrap cursor-pointer hover:bg-white hover:bg-opacity-90 transition-colors"
                 onClick={() => setIsContentEditModalOpen(true)}
               >
-                {editedPrompt?.content ? '点击修改提示词' : '点击此处编辑提示词内容...'}
+                {editedPrompt?.content ? (editedPrompt.content.length > 50 ? editedPrompt.content.substring(0, 50) + '...' : editedPrompt.content) : '点击此处编辑提示词内容...'}
               </div>
 
               {/* 内容编辑弹窗 */}
@@ -106,7 +103,7 @@ export function PromptDetailView({
                 onClose={() => setIsContentEditModalOpen(false)}
                 content={editedPrompt?.content || ''}
                 onChange={handleContentChange}
-                onSave={() => {}}
+                onSave={() => setIsContentEditModalOpen(false)}
               />
             </div>
 
@@ -122,31 +119,7 @@ export function PromptDetailView({
               ></textarea>
             </div>
 
-            {/* 公开设置 */}
-            <div>
-              <label className="block text-text-dark font-medium mb-2">提示词权限</label>
-              <div className="flex items-center space-x-4">
-                <label className="flex items-center space-x-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    name="isPublic"
-                    checked={editedPrompt?.isPublic || false}
-                    onChange={(e) => handleInputChange && handleInputChange({
-                      target: {
-                        name: 'isPublic',
-                        value: e.target.checked
-                      }
-                    } as React.ChangeEvent<HTMLInputElement>)}
-                    className="form-checkbox h-5 w-5 text-[#5a9d6b] rounded border-[rgba(120,180,140,0.5)]"
-                  />
-                  <span className="text-text-medium">允许其他用户查看和使用此提示词</span>
-                </label>
-              </div>
-              <p className="text-text-light text-sm mt-1">
-                <span className="material-icons text-xs align-middle mr-1">info</span>
-                公开的提示词可以被所有用户查看和使用，但内容仍然保持加密状态
-              </p>
-            </div>
+
 
             {/* 示例管理 */}
             <div>
@@ -214,96 +187,5 @@ export function PromptDetailView({
         </div>
       </div>
     );
-  } else {
-    // 查看模式
-    return (
-      <div className="flex flex-col min-h-[500px]">
-        {/* 标题和类型栏 */}
-        <div className="flex items-center justify-between mb-6 mt-4">
-          <h2 className="text-xl font-medium text-text-dark">{prompt.title}</h2>
-          <div className="flex items-center">
-            <span className={`flex items-center px-3 py-1 rounded-full text-sm ${typeInfo.color}`}>
-              <span className="material-icons mr-1 text-sm">{typeInfo.icon}</span>
-              {typeInfo.label}
-            </span>
-          </div>
-        </div>
 
-        {/* 提示词内容区 */}
-        <div className="mb-6 flex-grow">
-          {/* 提示词描述 */}
-          <div className="mb-4">
-            <h4 className="text-text-dark font-medium mb-2">提示词描述</h4>
-            {prompt.description ? (
-              <div className="p-5 bg-white bg-opacity-50 rounded-xl border border-[rgba(120,180,140,0.2)]">
-                <p className="whitespace-pre-wrap text-text-medium">{prompt.description}</p>
-              </div>
-            ) : (
-              <div className="p-5 bg-white bg-opacity-50 rounded-xl border border-[rgba(120,180,140,0.2)] text-center flex items-center justify-center h-24">
-                <p className="text-text-light italic">暂无描述信息</p>
-              </div>
-            )}
-          </div>
-
-          {/* 提示词内容 - 已删除 */}
-
-          {/* 示例 */}
-          {prompt.examples && prompt.examples.length > 0 && (
-            <div className="mt-4">
-              <h4 className="text-text-dark font-medium mb-2">示例</h4>
-              <div className="space-y-3">
-                {prompt.examples.map((example, index) => (
-                  <div key={index} className="p-4 bg-white bg-opacity-50 rounded-xl border border-[rgba(120,180,140,0.2)]">
-                    <p className="whitespace-pre-wrap text-text-medium">{example}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* 底部元信息 */}
-        <div className="flex items-center justify-between text-text-light text-sm mt-auto">
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center">
-              <span className="material-icons text-xs mr-1">event</span>
-              创建于: {formatDate(prompt.createdAt)}
-            </div>
-            {prompt.isPublic && (
-              <div className="flex items-center text-green-600">
-                <span className="material-icons text-xs mr-1">public</span>
-                公开提示词
-              </div>
-            )}
-          </div>
-          <div className="flex items-center">
-            <span className="material-icons text-xs mr-1">update</span>
-            更新于: {formatDate(prompt.updatedAt)}
-          </div>
-        </div>
-
-        {/* 操作按钮区 */}
-        <div className="flex justify-end mt-6 space-x-3">
-          {onEdit && (
-            <button
-              onClick={onEdit}
-              className="btn-outline flex items-center text-sm px-4 py-2"
-            >
-              <span className="material-icons mr-1 text-sm">edit</span>
-              编辑
-            </button>
-          )}
-          {onDelete && (
-            <button
-              onClick={onDelete}
-              className="btn-outline flex items-center text-sm px-4 py-2 text-[#E06F6F] border-[#E06F6F]"
-            >
-              <span className="material-icons mr-1 text-sm">delete</span>
-              删除
-            </button>
-          )}
-        </div>
-      </div>
-    );
-  }
 }

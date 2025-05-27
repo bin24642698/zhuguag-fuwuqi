@@ -813,7 +813,6 @@ export const AIAssistantModal: React.FC<AIAssistantModalProps> = ({
                 className="w-full px-3 py-2 rounded-lg border border-[rgba(120,180,140,0.3)] bg-white focus:outline-none focus:ring-2 focus:ring-primary-green focus:border-transparent transition-all duration-200 appearance-none"
             >
               <option value={MODELS.GEMINI_FLASH}>普通版 (快速生成)</option>
-              <option value={MODELS.GEMINI_PRO}>高级版 (高质量)</option>
             </select>
               <div className="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">

@@ -2,8 +2,8 @@
 
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { getCurrentUser } from '@/lib/supabase';
 import { generateEncryptionKey, decryptText } from '@/lib/utils/encryption';
+import { useAuthStore } from '@/store/slices/authStore';
 
 interface PromptContentEditModalProps {
   isOpen: boolean;
@@ -41,7 +41,7 @@ export function PromptContentEditModal({
       try {
         // 检查内容是否需要解密
         if (content.startsWith('U2F')) {
-          const user = await getCurrentUser();
+          const user = await useAuthStore.getState().getCurrentUser();
           if (user) {
             const key = generateEncryptionKey(user.id);
             try {

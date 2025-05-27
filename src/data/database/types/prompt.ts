@@ -10,9 +10,6 @@ export interface Prompt {
   content: string;
   description?: string;
   examples?: string[] | any[]; // 支持字符串数组和JSONB
-  isPublic?: boolean; // 是否公开提示词，允许其他用户查看和使用
-  userId?: string; // 提示词创建者的用户ID
-  publicChangedAt?: Date; // 公开状态最后修改时间 (tishici表特有)
   createdAt: Date;
   updatedAt: Date;
 }

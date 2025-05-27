@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Modal } from '@/components/common/modals';
 import { Prompt } from '@/data';
-import { getAIInterfacePromptsByType, getPromptsByType, getPublicPrompts, getUserCreatedPrompts } from '@/data';
+import { getAIInterfacePromptsByType } from '@/data';
 import { PROMPT_TYPE_LABELS } from '@/data/database/types/prompt';
 
 interface PromptSelectionModalProps {
@@ -72,7 +72,6 @@ export const PromptSelectionModal: React.FC<PromptSelectionModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterType, setFilterType] = useState<'recommended' | 'user' | 'my'>('recommended');
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [selectedPrompt, setSelectedPrompt] = useState<Prompt | null>(null);
@@ -91,19 +90,8 @@ export const PromptSelectionModal: React.FC<PromptSelectionModalProps> = ({
     setError('');
 
     try {
-      let loadedPrompts: Prompt[] = [];
-
-      if (filterType === 'my') {
-        // 加载用户自己的提示词
-        loadedPrompts = await getAIInterfacePromptsByType(promptType, false);
-      } else if (filterType === 'recommended') {
-        // 加载推荐提示词（公开提示词）
-        loadedPrompts = await getPublicPrompts(promptType, false);
-      } else if (filterType === 'user') {
-        // 加载其他用户创建的提示词
-        loadedPrompts = await getUserCreatedPrompts(promptType, false);
-      }
-
+      // 加载用户自己的提示词
+      const loadedPrompts = await getAIInterfacePromptsByType(promptType, false);
       setPrompts(loadedPrompts);
 
       // 如果有初始选中的提示词ID，设置选中状态
@@ -119,7 +107,7 @@ export const PromptSelectionModal: React.FC<PromptSelectionModalProps> = ({
     } finally {
       setIsLoading(false);
     }
-  }, [isOpen, promptType, filterType, initialSelectedId]);
+  }, [isOpen, promptType, initialSelectedId]);
 
   // 过滤和分页提示词
   useEffect(() => {
@@ -179,14 +167,7 @@ export const PromptSelectionModal: React.FC<PromptSelectionModalProps> = ({
     }
   };
 
-  // 处理过滤类型切换
-  const handleFilterTypeChange = (type: 'my' | 'recommended' | 'user') => {
-    if (type !== filterType) {
-      setFilterType(type);
-      setPage(1);
-      setSelectedPrompt(null);
-    }
-  };
+
 
   return (
     <Modal
@@ -230,51 +211,8 @@ export const PromptSelectionModal: React.FC<PromptSelectionModalProps> = ({
       maxWidth="max-w-2xl"
     >
       <div className="h-[500px] flex flex-col bg-[#fcfcfa] rounded-lg shadow-inner">
-        {/* 搜索和过滤区域 */}
-        <div className="mb-4 p-3 flex items-center justify-between bg-[#f7f6f1] rounded-lg border border-[#8a7c70]/30 shadow-sm">
-          {/* 过滤标签 - 吉卜力风格按钮 */}
-          <div className="flex space-x-2">
-            <button
-              onClick={() => handleFilterTypeChange('recommended')}
-              className={`px-3 py-1.5 rounded-lg text-sm transition-all duration-200 ${
-                filterType === 'recommended'
-                  ? 'bg-gradient-to-br from-[#6d5c4d] to-[#4b3b2a] text-white shadow-sm'
-                  : 'bg-white text-gray-600 hover:bg-white border border-[#8a7c70]'
-              }`}
-            >
-              <span className="flex items-center">
-                <span className="material-icons text-sm mr-1">recommend</span>
-                推荐
-              </span>
-            </button>
-            <button
-              onClick={() => handleFilterTypeChange('user')}
-              className={`px-3 py-1.5 rounded-lg text-sm transition-all duration-200 ${
-                filterType === 'user'
-                  ? 'bg-gradient-to-br from-[#6d5c4d] to-[#4b3b2a] text-white shadow-sm'
-                  : 'bg-white text-gray-600 hover:bg-white border border-[#8a7c70]'
-              }`}
-            >
-              <span className="flex items-center">
-                <span className="material-icons text-sm mr-1">group</span>
-                用户
-              </span>
-            </button>
-            <button
-              onClick={() => handleFilterTypeChange('my')}
-              className={`px-3 py-1.5 rounded-lg text-sm transition-all duration-200 ${
-                filterType === 'my'
-                  ? 'bg-gradient-to-br from-[#6d5c4d] to-[#4b3b2a] text-white shadow-sm'
-                  : 'bg-white text-gray-600 hover:bg-white border border-[#8a7c70]'
-              }`}
-            >
-              <span className="flex items-center">
-                <span className="material-icons text-sm mr-1">person</span>
-                我的
-              </span>
-            </button>
-          </div>
-
+        {/* 搜索区域 */}
+        <div className="mb-4 p-3 flex items-center justify-end bg-[#f7f6f1] rounded-lg border border-[#8a7c70]/30 shadow-sm">
           {/* 搜索框 - 更精美的设计 */}
           <div className="relative">
             <input

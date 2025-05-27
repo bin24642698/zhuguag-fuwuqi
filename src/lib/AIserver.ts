@@ -1,17 +1,14 @@
 /**
  * AIserver - 简化的AI服务接口
- * 提供与Gemini API的通信功能
+ * 通过后端API中转与AI服务通信
  */
-import { OpenAI } from 'openai'; // 导入OpenAI库
 import { getCurrentUser } from '@/lib/supabase';
 import { generateEncryptionKey, decryptText } from '@/lib/utils/encryption';
 import { getPromptById } from '@/data';
-import { getUserApiKey, incrementKeyUsage } from '@/lib/supabase/apiKeyPoolService';
 
 // 模型常量
 export const MODELS = {
   GEMINI_FLASH: 'gemini-2.5-flash-preview-04-17', // 普通版
-  GEMINI_PRO: 'gemini-2.5-pro-exp-03-25',      // 高级版
 };
 
 // 消息类型
@@ -32,52 +29,35 @@ export interface GenerateOptions {
 // 默认选项
 const DEFAULT_OPTIONS: Omit<GenerateOptions, 'model' | 'abortSignal'> = {
   temperature: 0.7,
-  max_tokens: 4096, // 调整默认max_tokens
+  max_tokens: 4096,
   stream: true
 };
-
-// API Base URL (从用户输入获取)
-const API_BASE = "https://bin.24642698.xyz/v1";
 
 /**
  * 错误处理函数
  */
 const handleAIError = (error: any): string => {
   console.error('AI服务错误:', error);
-  const errorMessage = error?.message || JSON.stringify(error) || '未知错误'; // 更详细的错误日志
+  const errorMessage = error?.message || JSON.stringify(error) || '未知错误';
 
-  if (errorMessage.includes('API key not configured')) {
+  if (errorMessage.includes('API key not configured') || errorMessage.includes('API密钥未配置')) {
     return 'API密钥未配置，请联系管理员';
   }
-  // 增加对OpenAI特定错误的处理
-  if (error instanceof OpenAI.APIError) {
-    if (error.status === 401) {
-        return `API认证失败：${error.message} (状态码: ${error.status})，请联系管理员。`;
-    }
-    if (error.status === 429) {
-        return `请求过于频繁：${error.message} (状态码: ${error.status})，请稍后再试。`;
-    }
-    if (error.code === 'invalid_api_key') {
-         return `无效的API密钥：${error.message}。请联系管理员。`;
-    }
-    return `OpenAI API错误：${error.message} (状态码: ${error.status}, 类型: ${error.type}, Code: ${error.code})`;
+  if (errorMessage.includes('认证失败') || errorMessage.includes('authentication')) {
+    return 'API认证失败，请联系管理员';
   }
-  // 其他错误类型
+  if (errorMessage.includes('请求过于频繁') || errorMessage.includes('429')) {
+    return '请求过于频繁，请稍后再试';
+  }
   if (errorMessage.includes('token') || errorMessage.includes('context_length_exceeded')) {
     return '内容长度超出模型限制，请尝试减少输入内容';
   }
   if (errorMessage.includes('network') || errorMessage.includes('timeout') || errorMessage.includes('fetch failed')) {
-    return '网络连接错误，请检查您的网络连接或API Base URL是否正确，并重试';
+    return '网络连接错误，请检查您的网络连接并重试';
   }
-  if (errorMessage.includes('authentication') || errorMessage.includes('认证')) {
-     return 'API认证失败，请联系管理员';
-  }
-  // 默认错误消息
+
   return `生成内容失败: ${errorMessage}`;
 };
-
-// 缓存 OpenAI client 实例
-let openaiClientInstance: OpenAI | null = null;
 
 /**
  * 解密提示词内容
@@ -193,34 +173,24 @@ const decryptPromptMessages = async (messages: Message[]): Promise<Message[]> =>
 };
 
 /**
- * 获取或创建OpenAI客户端实例
- * @returns OpenAI 客户端实例
+ * 获取用户认证token
+ * @returns 用户token
  */
-const getOpenAIClient = async (): Promise<OpenAI> => {
-  // 从服务器获取API密钥
-  const apiKey = await getUserApiKey();
+const getUserToken = async (): Promise<string> => {
+  // 动态导入supabase客户端
+  const { createClient } = await import('@supabase/supabase-js');
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+  );
 
-  // 添加调试信息
-  console.log("API Key获取结果:", apiKey ? "成功获取API Key" : "未获取到API Key");
+  const { data: { session }, error } = await supabase.auth.getSession();
 
-  // 获取当前用户信息，用于调试
-  const user = await getCurrentUser();
-  console.log("当前用户ID:", user?.id);
-
-  if (!apiKey) {
-    console.error("API Key获取失败，检查数据库中是否有正确的分配记录");
-    throw new Error('API key not configured');
+  if (error || !session?.access_token) {
+    throw new Error('用户未登录或token已过期');
   }
 
-  // 每次获取客户端实例时都重新创建，确保使用最新的API key
-  console.log("Creating new OpenAI client instance...");
-  openaiClientInstance = new OpenAI({
-    apiKey: apiKey,
-    baseURL: API_BASE, // 使用baseURL, typescript类型定义使用这个名称
-    dangerouslyAllowBrowser: true // 必须在浏览器环境中允许
-  });
-
-  return openaiClientInstance;
+  return session.access_token;
 };
 
 /**
@@ -228,7 +198,7 @@ const getOpenAIClient = async (): Promise<OpenAI> => {
  */
 export const AIGenerator = {
   /**
-   * 生成AI内容(非流式)
+   * 生成AI内容(非流式) - 已弃用，建议使用流式版本
    * @param messages 消息数组
    * @param options 生成选项
    * @returns 生成的内容
@@ -248,40 +218,68 @@ export const AIGenerator = {
       // 解密提示词内容
       const decryptedMessages = await decryptPromptMessages(messages);
 
-      const client = await getOpenAIClient();
+      // 获取用户token
+      const token = await getUserToken();
+
       // 确保 model 有明确的值，避免 undefined
       const modelToUse = options.model || MODELS.GEMINI_FLASH;
 
       console.log(`使用模型: ${modelToUse}`);
 
-      // 添加请求信息日志
-      console.log("发送请求:", {
-        model: modelToUse,
-        messages: decryptedMessages.map(m => ({ role: m.role, content: m.role === 'system' ? '(系统提示词)' : m.content })), // 不在日志中显示完整的系统提示词内容
-        temperature: options.temperature || DEFAULT_OPTIONS.temperature
+      // 调用后端API（非流式）
+      const response = await fetch('/api/ai/stream', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          messages: decryptedMessages,
+          options: {
+            model: modelToUse,
+            temperature: options.temperature || DEFAULT_OPTIONS.temperature,
+            max_tokens: options.max_tokens || DEFAULT_OPTIONS.max_tokens
+          }
+        })
       });
 
-      const completion = await client.chat.completions.create({
-        model: modelToUse,
-        messages: decryptedMessages.map(m => ({ role: m.role, content: m.content })), // 使用解密后的消息
-        temperature: options.temperature || DEFAULT_OPTIONS.temperature,
-        stream: false
-      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || '请求失败');
+      }
 
-      // 增加API key使用次数
-      await incrementKeyUsage();
+      // 由于后端返回的是流式数据，我们需要收集所有内容
+      let fullContent = '';
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
 
-      return completion.choices[0]?.message?.content || '';
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split('\n');
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = line.slice(6);
+              try {
+                const parsed = JSON.parse(data);
+                if (parsed.content) {
+                  fullContent += parsed.content;
+                }
+              } catch (e) {
+                // 忽略解析错误
+              }
+            }
+          }
+        }
+      }
+
+      return fullContent;
     } catch (error: any) {
       console.error("API请求错误:", error);
-
-      // 添加更详细的错误信息
-      if (error.status) console.error(`错误状态码: ${error.status}`);
-      if (error.message) console.error(`错误消息: ${error.message}`);
-      if (error.code) console.error(`错误代码: ${error.code}`);
-      if (error.type) console.error(`错误类型: ${error.type}`);
-      if (error.stack) console.error(`堆栈: ${error.stack}`);
-
       const errorMessage = handleAIError(error);
       throw new Error(errorMessage);
     }
@@ -309,7 +307,9 @@ export const AIGenerator = {
       // 解密提示词内容
       const decryptedMessages = await decryptPromptMessages(messages);
 
-      const client = await getOpenAIClient();
+      // 获取用户token
+      const token = await getUserToken();
+
       // 确保 model 有明确的值，避免 undefined
       const modelToUse = options.model || MODELS.GEMINI_FLASH;
 
@@ -318,41 +318,67 @@ export const AIGenerator = {
       // 添加请求信息日志
       console.log("发送流式请求:", {
         model: modelToUse,
-        messages: decryptedMessages.map(m => ({ role: m.role, content: m.role === 'system' ? '(系统提示词)' : m.content })), // 不在日志中显示完整的系统提示词内容
+        messageCount: decryptedMessages.length,
         temperature: options.temperature || DEFAULT_OPTIONS.temperature
       });
 
-      // 使用更简化的参数调用API
-      const stream = await client.chat.completions.create({
-        model: modelToUse,
-        messages: decryptedMessages.map(m => ({ role: m.role, content: m.content })), // 使用解密后的消息
-        temperature: options.temperature || DEFAULT_OPTIONS.temperature,
-        stream: true
+      // 调用后端API
+      const response = await fetch('/api/ai/stream', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          messages: decryptedMessages,
+          options: {
+            model: modelToUse,
+            temperature: options.temperature || DEFAULT_OPTIONS.temperature,
+            max_tokens: options.max_tokens || DEFAULT_OPTIONS.max_tokens
+          }
+        })
       });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || '请求失败');
+      }
 
       console.log("Stream created successfully");
 
-      for await (const chunk of stream) {
-        const content = chunk.choices[0]?.delta?.content || '';
-        if (content) {
-          onChunk(content);
+      // 处理流式响应
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split('\n');
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = line.slice(6);
+              try {
+                const parsed = JSON.parse(data);
+                if (parsed.content) {
+                  onChunk(parsed.content);
+                }
+              } catch (e) {
+                // 忽略解析错误
+              }
+            }
+          }
         }
       }
 
-      // 增加API key使用次数
-      await incrementKeyUsage();
     } catch (error: any) {
       console.error("API流式请求错误:", error);
 
-      // 添加更详细的错误信息
-      if (error.status) console.error(`错误状态码: ${error.status}`);
-      if (error.message) console.error(`错误消息: ${error.message}`);
-      if (error.code) console.error(`错误代码: ${error.code}`);
-      if (error.type) console.error(`错误类型: ${error.type}`);
-      if (error.stack) console.error(`堆栈: ${error.stack}`);
-
       // 检查是否是用户主动中止
-      if (error instanceof OpenAI.APIUserAbortError || (error instanceof DOMException && error.name === 'AbortError')) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
         console.log("Stream generation aborted by user.");
         const abortError = new Error('AbortError');
         abortError.name = 'AbortError';
