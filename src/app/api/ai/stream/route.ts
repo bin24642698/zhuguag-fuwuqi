@@ -8,7 +8,7 @@ const supabase = createClient(
 );
 
 // API Base URL - 使用环回地址
-const API_BASE = "http://127.0.0.1:8080/v1";
+const API_BASE = "https://api.24642698.xyz/v1";
 
 // 消息类型
 interface Message {
@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 使用固定的API Key
-    const apiKey = 'sk-2HqCKT3zSQUaVG0QStKAITACH9b4x9x3UWvHU2HDHR8Q25dV';
+    const apiKey = 'sk-IcZlIdbo6TntcwAQhl7PhYsS6JnpwKEzDxvfA0NW2DvuPWfM';
 
     // 构建请求到目标AI服务
     const aiRequest = {
