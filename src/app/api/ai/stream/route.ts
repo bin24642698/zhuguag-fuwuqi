@@ -8,7 +8,7 @@ const supabase = createClient(
 );
 
 // API Base URL - 使用环回地址
-const API_BASE = "https://api.24642698.xyz/v1";
+const API_BASE = "https://new.24642698.xyz/v1";
 
 // 消息类型
 interface Message {
